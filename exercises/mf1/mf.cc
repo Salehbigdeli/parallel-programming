@@ -16,7 +16,7 @@ void mf(int ny, int nx, int hy, int hx, const float *in, float *out) {
   int wind_he;
   int wind_ws;
   int wind_we;
-  
+  std::vector<double> buf((2*hy+1)*(2*hx+1));
   for (int y=0; y < ny ; ++y) {
     for (int x=0 ; x < nx ; ++x){
 
@@ -24,22 +24,23 @@ void mf(int ny, int nx, int hy, int hx, const float *in, float *out) {
       wind_he = std::min(x+hx+1, nx);
       wind_ws = std::max(y-hy, 0);
       wind_we = std::min(y+hy+1, ny);
-      std::vector<double> buf;
-
+      int t = 0;
       for (int y1=wind_ws; y1 < wind_we ; ++y1) {
         for (int x1=wind_hs ; x1 < wind_he ; ++x1){
-          buf.push_back(in[x1 + nx*y1]);
+          buf[t] = in[x1 + nx*y1];
+          ++t;
         }
       }
-      auto m = buf.begin() + buf.size()/2;
-      std::nth_element(buf.begin(), m, buf.end());
+      auto m = buf.begin() + t/2;
+      auto end = buf.begin() + t;
+      std::nth_element(buf.begin(), m, end);
       
-      if (buf.size()%2 == 0){
-        auto m = buf.begin() + buf.size()/2-1;
-        std::nth_element(buf.begin(), m, buf.end());
-        out[x + nx*y] = float(buf[buf.size()/2] + buf[buf.size()/2-1])/2;
+      if (t%2 == 0){
+        auto m = buf.begin() + t/2-1;
+        std::nth_element(buf.begin(), m, end);
+        out[x + nx*y] = float(buf[t/2] + buf[t/2-1])/2;
       } else {
-        out[x + nx*y] = float(buf[buf.size()/2]);
+        out[x + nx*y] = float(buf[t/2]);
       }
     }
   }
