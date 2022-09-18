@@ -1,3 +1,10 @@
+exercises/*/.vscode/
+exercises/*/benchmarks/
+exercises/*/grading
+exercises/*/tests/
+exercises/*/.ppc/
+exercises/*/.gitignore
+
 # Prerequisites
 *.d
 
