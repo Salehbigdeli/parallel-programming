@@ -8,16 +8,17 @@ This is the function you need to implement. Quick reference:
 */
 #include <math.h>
 #include <new>
+#include<cstdlib>
 
-typedef float float8_t __attribute__ ((vector_size (8 * sizeof(float))));
+typedef double double8_t __attribute__ ((vector_size (8 * sizeof(double))));
 
 
-static float8_t* float8_alloc(std::size_t n) {
+static double8_t* double8_alloc(std::size_t n) {
     void* tmp = 0;
-    if (posix_memalign(&tmp, sizeof(float8_t), sizeof(float8_t) * n)) {
+    if (posix_memalign(&tmp, sizeof(double8_t), sizeof(double8_t) * n)) {
         throw std::bad_alloc();
     }
-    return (float8_t*)tmp;
+    return (double8_t*)tmp;
 }
 
 
@@ -27,11 +28,12 @@ void correlate(int ny, int nx, const float *data, float *result) {
     int buckets = (nx + parts - 1) / parts;
     int patitionable_nx = buckets*parts;
 
-    double* data_minus_rows_average = new double[ny*patitionable_nx];
-    double* data_minus_rows_average_replica = new double[ny*patitionable_nx];
+    double8_t* vdata_minus_rows_average = double8_alloc(ny*buckets);
+    double8_t* vdata_minus_rows_average_replica = double8_alloc(ny*buckets);
     double* auto_correlation = new double[ny];
     
-    #pragma omp parallel for
+
+
     for (int i=0 ; i < ny ; ++i){
         auto_correlation[i] = 0;
     } 
@@ -44,9 +46,11 @@ void correlate(int ny, int nx, const float *data, float *result) {
         }
         row_mean /= nx;
         for (int j=0 ; j < nx ; ++j) {
+            int p = j/parts;
+            int z = j%parts;
             double t = data[i*nx+j] - row_mean;
-            data_minus_rows_average[i*patitionable_nx+j] = t;
-            data_minus_rows_average_replica[i*patitionable_nx+j] = t;
+            vdata_minus_rows_average[i*buckets+p][z] = t;
+            vdata_minus_rows_average_replica[i*buckets+p][z] = t;
             auto_correlation[i] += t*t;
         }
     }
@@ -57,7 +61,9 @@ void correlate(int ny, int nx, const float *data, float *result) {
         #pragma omp parallel for
         for (int i=0 ; i < ny ; ++i){
             for (int j=nx ; j < patitionable_nx ; ++j) {
-                data_minus_rows_average[i*patitionable_nx+j] = 0;
+                int t = j/parts;
+                int p = j%parts;
+                vdata_minus_rows_average[i*buckets+t][p] = 0;
             }
         }
     }
@@ -67,15 +73,12 @@ void correlate(int ny, int nx, const float *data, float *result) {
         for (int i=0 ; i < j ; ++i) {
 
             double diff = 0;
-            double diffs[parts] = {0};
+            double8_t diffs = {0};
             for (int k=0; k < patitionable_nx/parts ; ++k) {
-                for(int t=0; t < parts ; ++t){
-                    // if (t+k*parts >= nx) break; // prevents optimizations !!!
-                    double row_i_part = data_minus_rows_average[t+k*parts + i*patitionable_nx];
-                    double row_j_part = data_minus_rows_average_replica[t+k*parts + j*patitionable_nx];
-                    diffs[t] += row_i_part * row_j_part;
-                }
-                
+                // if (t+k*parts >= nx) break; // prevents optimizations !!!
+                double8_t row_i_part = vdata_minus_rows_average[k + i*buckets];
+                double8_t row_j_part = vdata_minus_rows_average_replica[k + j*buckets];
+                diffs += row_i_part * row_j_part;
             }
             for(int t=0; t <  parts; ++t){
                 diff += diffs[t];
@@ -88,7 +91,7 @@ void correlate(int ny, int nx, const float *data, float *result) {
     for (int i=0 ; i < ny ; ++i){
         result[i + i*ny] = 1;
     }
-    delete [] data_minus_rows_average;
+    std::free(vdata_minus_rows_average);
     delete [] auto_correlation;
-    delete [] data_minus_rows_average_replica;
+    std::free(vdata_minus_rows_average_replica);
 }
